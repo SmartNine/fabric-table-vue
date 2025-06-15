@@ -1,28 +1,24 @@
-
 <template>
-  <FabricTable
-    :rows="4"
-    :cols="3"
-    :cellWidth="120"
-    :cellHeight="40"
-    :tableData="tableData"
-    ref="fabricTableRef"
-  />
-  <button @click="downloadJSON">导出JSON</button>
+  <InsertTablePanel @insert="handleInsertTable" />
+  <FabricTable v-if="showTable" :rows="selectedRows" :cols="selectedCols" ref="fabricTableRef" />
+  <button v-if="showTable" @click="downloadJSON">导出JSON</button>
 </template>
 
 <script setup>
 import { ref } from 'vue'
 import FabricTable from '../components/FabricTable.vue'
+import InsertTablePanel from '../components/InsertTablePanel.vue'
 
-const tableData = [
-  ['Name', 'Age', 'City'],
-  ['Alice', '24', 'LA'],
-  ['Bob', '32', 'NY'],
-  ['Eve', '', 'SF'],
-]
-
+const selectedRows = ref(0)
+const selectedCols = ref(0)
+const showTable = ref(false)
 const fabricTableRef = ref()
+
+function handleInsertTable({ rows, cols }) {
+  selectedRows.value = rows
+  selectedCols.value = cols
+  showTable.value = true
+}
 
 function downloadJSON() {
   const json = fabricTableRef.value.exportJSON()
