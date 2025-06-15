@@ -11,8 +11,8 @@
     <RowToolbar v-if="showRowToolbar" :top="toolbarTop" @insert-above="insertRowAbove" @insert-below="insertRowBelow"
       @delete="deleteSelectedRow" />
     <!-- 列工具栏 -->
-    <ColToolbar v-if="showColToolbar" :top="20" :left="toolbarLeft" @insert-left="insertColLeft"
-      @insert-right="insertColRight" @delete="deleteSelectedCol" @align="setColAlign" />
+    <ColToolbar v-if="showColToolbar" :top="20" :left="toolbarLeft" :align="currentColAlign"
+      @insert-left="insertColLeft" @insert-right="insertColRight" @delete="deleteSelectedCol" @align="setColAlign" />
     <!-- 浮动输入框 -->
     <input v-if="showInput" v-model="inputValue" :style="inputStyle" class="floating-input" @blur="applyInput"
       @keyup.enter="applyInput" @keyup.esc="cancelEdit" />
@@ -50,16 +50,14 @@ const tableTop = 100
 const tableLeft = 100
 const showRowToolbar = ref(false)
 const showColToolbar = ref(false)
+const currentColAlign = ref('center')
 
-// 输入框相关
 const showInput = ref(false)
 const inputValue = ref('')
 const inputStyle = ref({})
 let editingText = null
 let editingRow = null
 let editingCol = null
-
-// 双击防抖相关
 let isDoubleClick = false
 let doubleClickTimer = null
 
@@ -106,31 +104,8 @@ function renderTable() {
     for (let c = 0; c < cols; c++) {
       const left = c * props.cellWidth
       const top = r * props.cellHeight
-
-      const rect = new fabric.Rect({
-        left,
-        top,
-        width: props.cellWidth,
-        height: props.cellHeight,
-        stroke: '#555',
-        strokeWidth: 1,
-        fill: '#fff',
-        selectable: false,
-      })
-
-      // 确保从 table.value 获取最新数据
-      const cellValue = table.value[r][c] || ''
-      const text = new fabric.Textbox(cellValue, {
-        left: left + 5,
-        top: top + 5,
-        fontSize: 16,
-        width: props.cellWidth - 10,
-        height: props.cellHeight - 10,
-        editable: false,
-        selectable: true,
-        textAlign: 'center',
-      })
-
+      const rect = new fabric.Rect({ left, top, width: props.cellWidth, height: props.cellHeight, stroke: '#555', strokeWidth: 1, fill: '#fff', selectable: false })
+      const text = new fabric.Textbox(table.value[r][c] || '', { left: left + 5, top: top + 5, fontSize: 16, width: props.cellWidth - 10, height: props.cellHeight - 10, editable: false, selectable: true, textAlign: 'center' })
       textRow.push(text)
       rectRow.push(rect)
       cells.push(rect, text)
@@ -139,14 +114,7 @@ function renderTable() {
     rectRefs.value.push(rectRow)
   }
 
-  tableGroup = new fabric.Group(cells, {
-    left: tableLeft,
-    top: tableTop,
-    subTargetCheck: true,
-    hasControls: true,
-    hasBorders: true,
-  })
-
+  tableGroup = new fabric.Group(cells, { left: tableLeft, top: tableTop, subTargetCheck: true, hasControls: true, hasBorders: true })
   canvas.add(tableGroup)
   canvas.setActiveObject(tableGroup)
   canvas.renderAll()
@@ -154,20 +122,12 @@ function renderTable() {
 
 function applyInput() {
   if (editingRow !== null && editingCol !== null) {
-    // 更新数据模型
     table.value[editingRow][editingCol] = inputValue.value
-
-    // 更新 fabric.js 文本对象
-    if (editingText) {
-      editingText.set('text', inputValue.value)
-    }
-
-    // 清理编辑状态
+    if (editingText) editingText.set('text', inputValue.value)
     showInput.value = false
     editingText = null
     editingRow = null
     editingCol = null
-
     canvas.requestRenderAll()
   }
 }
@@ -180,7 +140,7 @@ function cancelEdit() {
 }
 
 function handleRowHeaderClick(index) {
-  if (!showInput.value) { // 如果不在编辑状态才允许选择行
+  if (!showInput.value) {
     selectedRowIndex.value = index
     toolbarTop.value = tableTop + index * props.cellHeight + 20
     highlightRowCol()
@@ -188,9 +148,11 @@ function handleRowHeaderClick(index) {
 }
 
 function handleColHeaderClick(index) {
-  if (!showInput.value) { // 如果不在编辑状态才允许选择列
+  if (!showInput.value) {
     selectedColIndex.value = index
     toolbarLeft.value = tableLeft + index * props.cellWidth + 20
+    const text = textRefs.value[0]?.[index]
+    if (text) currentColAlign.value = text.textAlign || 'center'
     highlightRowCol()
   }
 }
@@ -199,73 +161,61 @@ function addRow() {
   table.value.push(Array(table.value[0].length).fill(''))
   renderTable()
 }
-
 function addCol() {
   for (let row of table.value) row.push('')
   renderTable()
 }
-
 function removeRow() {
   if (table.value.length > 1) table.value.pop()
   renderTable()
 }
-
 function removeCol() {
-  if (table.value[0].length > 1)
-    table.value.forEach((row) => row.pop())
+  if (table.value[0].length > 1) table.value.forEach(row => row.pop())
   renderTable()
 }
-
 function insertRowAbove() {
   if (selectedRowIndex.value !== null) {
     table.value.splice(selectedRowIndex.value, 0, Array(table.value[0].length).fill(''))
     renderTable()
   }
 }
-
 function insertRowBelow() {
   if (selectedRowIndex.value !== null) {
     table.value.splice(selectedRowIndex.value + 1, 0, Array(table.value[0].length).fill(''))
     renderTable()
   }
 }
-
 function deleteSelectedRow() {
   if (table.value.length > 1 && selectedRowIndex.value !== null) {
     table.value.splice(selectedRowIndex.value, 1)
     renderTable()
   }
 }
-
 function insertColLeft() {
   if (selectedColIndex.value !== null) {
     for (let row of table.value) row.splice(selectedColIndex.value, 0, '')
     renderTable()
   }
 }
-
 function insertColRight() {
   if (selectedColIndex.value !== null) {
     for (let row of table.value) row.splice(selectedColIndex.value + 1, 0, '')
     renderTable()
   }
 }
-
 function deleteSelectedCol() {
   if (selectedColIndex.value !== null && table.value[0].length > 1) {
     for (let row of table.value) row.splice(selectedColIndex.value, 1)
     renderTable()
   }
 }
-
 function setColAlign(alignType) {
   const col = selectedColIndex.value
   if (col === null) return
+  currentColAlign.value = alignType
   for (let r = 0; r < textRefs.value.length; r++) {
     const text = textRefs.value[r][col]
-    if (text) {
-      text.textAlign = alignType
-    }
+    if (text) text.textAlign = alignType
   }
   canvas.requestRenderAll()
 }
@@ -275,14 +225,8 @@ onMounted(() => {
   table.value = initTableData(props.rows, props.cols, props.tableData)
   renderTable()
 
-  // 修改 mouse:down 事件，避免双击时触发
   canvas.on('mouse:down', (opt) => {
-    // 如果是双击或正在编辑，不处理这个事件
-    if (isDoubleClick || showInput.value) {
-      return
-    }
-
-    // 延迟处理，给双击事件留时间
+    if (isDoubleClick || showInput.value) return
     doubleClickTimer = setTimeout(() => {
       const target = opt.target
       if (!target || target === tableGroup) {
@@ -291,55 +235,30 @@ onMounted(() => {
         highlightRowCol()
         canvas.requestRenderAll()
       }
-    }, 200) // 200ms 延迟
+    }, 200)
   })
 
-  // 修复后的双击事件处理
   canvas.on('mouse:dblclick', (opt) => {
-    // 设置双击标志
     isDoubleClick = true
-
-    // 清除单击的延迟处理
-    if (doubleClickTimer) {
-      clearTimeout(doubleClickTimer)
-      doubleClickTimer = null
-    }
-
-    // 重置双击标志
-    setTimeout(() => {
-      isDoubleClick = false
-    }, 300)
+    if (doubleClickTimer) clearTimeout(doubleClickTimer)
+    setTimeout(() => { isDoubleClick = false }, 300)
 
     const pointer = canvas.getPointer(opt.e)
-
-    // 检查是否点击在表格区域内
     if (tableGroup && tableGroup.containsPoint(pointer)) {
-      // 计算相对于表格的坐标
       const relativeX = pointer.x - tableGroup.left
       const relativeY = pointer.y - tableGroup.top
-
-      // 计算行列索引
       const c = Math.floor(relativeX / props.cellWidth)
       const r = Math.floor(relativeY / props.cellHeight)
-
-      // 检查索引是否有效
       if (r >= 0 && r < table.value.length && c >= 0 && c < table.value[0].length) {
-        // 不要设置选中的行列，只进入编辑模式
-        // 清除之前的选中状态
         selectedRowIndex.value = null
         selectedColIndex.value = null
         highlightRowCol()
-
-        // 设置编辑状态
         editingRow = r
         editingCol = c
         editingText = textRefs.value[r][c]
-        inputValue.value = table.value[r][c] // 从数据源获取当前值
-
-        // 计算输入框的绝对位置
+        inputValue.value = table.value[r][c]
         const inputLeft = tableGroup.left + c * props.cellWidth + 5
         const inputTop = tableGroup.top + r * props.cellHeight + 5
-
         inputStyle.value = {
           position: 'absolute',
           left: `${inputLeft}px`,
@@ -353,9 +272,7 @@ onMounted(() => {
           zIndex: 1000,
           boxSizing: 'border-box'
         }
-
         showInput.value = true
-
         nextTick(() => {
           const input = document.querySelector('.floating-input')
           if (input) {
@@ -367,19 +284,14 @@ onMounted(() => {
     }
   })
 
-  // 添加键盘事件监听
   document.addEventListener('keydown', (e) => {
-    if (showInput.value) {
-      if (e.key === 'Escape') {
-        cancelEdit()
-      }
-    }
+    if (showInput.value && e.key === 'Escape') cancelEdit()
   })
 })
 
 defineExpose({
   getCanvas: () => canvas,
-  exportJSON: () => canvas.toJSON(),
+  exportJSON: () => canvas.toJSON()
 })
 </script>
 

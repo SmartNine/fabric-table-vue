@@ -1,15 +1,11 @@
 <template>
-    <div class="col-toolbar" :style="{
-        position: 'absolute',
-        top: top + 'px',
-        left: left + 'px',
-    }">
+    <div class="col-toolbar" :style="{ position: 'absolute', top: top + 'px', left: left + 'px' }">
         <button @click="$emit('insert-left')">⬅ 插左列</button>
         <button @click="$emit('insert-right')">➡ 插右列</button>
         <button @click="$emit('delete')">🗑 删除列</button>
-        <select @change="$emit('align', $event.target.value)">
+        <select :value="align" @change="$emit('align', $event.target.value)">
             <option value="left">⬅ 左对齐</option>
-            <option value="center" selected>⬍ 居中</option>
+            <option value="center">⬍ 居中</option>
             <option value="right">➡ 右对齐</option>
         </select>
     </div>
@@ -19,6 +15,10 @@
 defineProps({
     top: Number,
     left: Number,
+    align: {
+        type: String,
+        default: 'center', // 默认居中
+    },
 })
 
 defineEmits(['insert-left', 'insert-right', 'delete', 'align'])
