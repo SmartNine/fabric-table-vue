@@ -3,24 +3,19 @@
     <RowHeader :rows="table.length" :cellHeight="props.cellHeight" :tableTop="tableTop"
       :totalHeight="table.length * props.cellHeight" :selectedRow="selectedRowIndex"
       @select-row="handleRowHeaderClick" />
-
     <ColHeader :cols="table[0]?.length || 0" :cellWidth="props.cellWidth" :tableLeft="tableLeft"
       :totalWidth="table[0]?.length * props.cellWidth || 0" :selectedCol="selectedColIndex"
       @select-col="handleColHeaderClick" />
-
     <canvas ref="canvasEl" :width="canvasWidth" :height="canvasHeight" />
-
     <!-- 行工具栏 -->
     <RowToolbar v-if="showRowToolbar" :top="toolbarTop" @insert-above="insertRowAbove" @insert-below="insertRowBelow"
       @delete="deleteSelectedRow" />
-
     <!-- 列工具栏 -->
     <ColToolbar v-if="showColToolbar" :top="20" :left="toolbarLeft" @insert-left="insertColLeft"
       @insert-right="insertColRight" @delete="deleteSelectedCol" @align="setColAlign" />
-
     <!-- 浮动输入框 -->
     <input v-if="showInput" v-model="inputValue" :style="inputStyle" class="floating-input" @blur="applyInput"
-      @keyup.enter="applyInput" />
+      @keyup.enter="applyInput" @keyup.esc="cancelEdit" />
   </div>
 </template>
 
@@ -61,6 +56,12 @@ const showInput = ref(false)
 const inputValue = ref('')
 const inputStyle = ref({})
 let editingText = null
+let editingRow = null
+let editingCol = null
+
+// 双击防抖相关
+let isDoubleClick = false
+let doubleClickTimer = null
 
 watch([selectedRowIndex, selectedColIndex], () => {
   showRowToolbar.value = selectedRowIndex.value !== null
@@ -117,7 +118,9 @@ function renderTable() {
         selectable: false,
       })
 
-      const text = new fabric.Textbox(table.value[r][c], {
+      // 确保从 table.value 获取最新数据
+      const cellValue = table.value[r][c] || ''
+      const text = new fabric.Textbox(cellValue, {
         left: left + 5,
         top: top + 5,
         fontSize: 16,
@@ -150,24 +153,46 @@ function renderTable() {
 }
 
 function applyInput() {
-  if (editingText && selectedRowIndex.value !== null && selectedColIndex.value !== null) {
-    editingText.text = inputValue.value
-    table.value[selectedRowIndex.value][selectedColIndex.value] = inputValue.value
+  if (editingRow !== null && editingCol !== null) {
+    // 更新数据模型
+    table.value[editingRow][editingCol] = inputValue.value
+
+    // 更新 fabric.js 文本对象
+    if (editingText) {
+      editingText.set('text', inputValue.value)
+    }
+
+    // 清理编辑状态
     showInput.value = false
+    editingText = null
+    editingRow = null
+    editingCol = null
+
     canvas.requestRenderAll()
   }
 }
 
+function cancelEdit() {
+  showInput.value = false
+  editingText = null
+  editingRow = null
+  editingCol = null
+}
+
 function handleRowHeaderClick(index) {
-  selectedRowIndex.value = index
-  toolbarTop.value = tableTop + index * props.cellHeight + 20
-  highlightRowCol()
+  if (!showInput.value) { // 如果不在编辑状态才允许选择行
+    selectedRowIndex.value = index
+    toolbarTop.value = tableTop + index * props.cellHeight + 20
+    highlightRowCol()
+  }
 }
 
 function handleColHeaderClick(index) {
-  selectedColIndex.value = index
-  toolbarLeft.value = tableLeft + index * props.cellWidth + 20
-  highlightRowCol()
+  if (!showInput.value) { // 如果不在编辑状态才允许选择列
+    selectedColIndex.value = index
+    toolbarLeft.value = tableLeft + index * props.cellWidth + 20
+    highlightRowCol()
+  }
 }
 
 function addRow() {
@@ -197,12 +222,14 @@ function insertRowAbove() {
     renderTable()
   }
 }
+
 function insertRowBelow() {
   if (selectedRowIndex.value !== null) {
     table.value.splice(selectedRowIndex.value + 1, 0, Array(table.value[0].length).fill(''))
     renderTable()
   }
 }
+
 function deleteSelectedRow() {
   if (table.value.length > 1 && selectedRowIndex.value !== null) {
     table.value.splice(selectedRowIndex.value, 1)
@@ -216,18 +243,21 @@ function insertColLeft() {
     renderTable()
   }
 }
+
 function insertColRight() {
   if (selectedColIndex.value !== null) {
     for (let row of table.value) row.splice(selectedColIndex.value + 1, 0, '')
     renderTable()
   }
 }
+
 function deleteSelectedCol() {
   if (selectedColIndex.value !== null && table.value[0].length > 1) {
     for (let row of table.value) row.splice(selectedColIndex.value, 1)
     renderTable()
   }
 }
+
 function setColAlign(alignType) {
   const col = selectedColIndex.value
   if (col === null) return
@@ -245,44 +275,104 @@ onMounted(() => {
   table.value = initTableData(props.rows, props.cols, props.tableData)
   renderTable()
 
+  // 修改 mouse:down 事件，避免双击时触发
   canvas.on('mouse:down', (opt) => {
-    const target = opt.target
-    if (!target || target === tableGroup) {
-      selectedRowIndex.value = null
-      selectedColIndex.value = null
-      showInput.value = false
-      highlightRowCol()
-      canvas.requestRenderAll()
+    // 如果是双击或正在编辑，不处理这个事件
+    if (isDoubleClick || showInput.value) {
+      return
+    }
+
+    // 延迟处理，给双击事件留时间
+    doubleClickTimer = setTimeout(() => {
+      const target = opt.target
+      if (!target || target === tableGroup) {
+        selectedRowIndex.value = null
+        selectedColIndex.value = null
+        highlightRowCol()
+        canvas.requestRenderAll()
+      }
+    }, 200) // 200ms 延迟
+  })
+
+  // 修复后的双击事件处理
+  canvas.on('mouse:dblclick', (opt) => {
+    // 设置双击标志
+    isDoubleClick = true
+
+    // 清除单击的延迟处理
+    if (doubleClickTimer) {
+      clearTimeout(doubleClickTimer)
+      doubleClickTimer = null
+    }
+
+    // 重置双击标志
+    setTimeout(() => {
+      isDoubleClick = false
+    }, 300)
+
+    const pointer = canvas.getPointer(opt.e)
+
+    // 检查是否点击在表格区域内
+    if (tableGroup && tableGroup.containsPoint(pointer)) {
+      // 计算相对于表格的坐标
+      const relativeX = pointer.x - tableGroup.left
+      const relativeY = pointer.y - tableGroup.top
+
+      // 计算行列索引
+      const c = Math.floor(relativeX / props.cellWidth)
+      const r = Math.floor(relativeY / props.cellHeight)
+
+      // 检查索引是否有效
+      if (r >= 0 && r < table.value.length && c >= 0 && c < table.value[0].length) {
+        // 不要设置选中的行列，只进入编辑模式
+        // 清除之前的选中状态
+        selectedRowIndex.value = null
+        selectedColIndex.value = null
+        highlightRowCol()
+
+        // 设置编辑状态
+        editingRow = r
+        editingCol = c
+        editingText = textRefs.value[r][c]
+        inputValue.value = table.value[r][c] // 从数据源获取当前值
+
+        // 计算输入框的绝对位置
+        const inputLeft = tableGroup.left + c * props.cellWidth + 5
+        const inputTop = tableGroup.top + r * props.cellHeight + 5
+
+        inputStyle.value = {
+          position: 'absolute',
+          left: `${inputLeft}px`,
+          top: `${inputTop}px`,
+          width: `${props.cellWidth - 10}px`,
+          height: `${props.cellHeight - 10}px`,
+          fontSize: '16px',
+          padding: '2px 4px',
+          border: '2px solid #007acc',
+          background: '#fff',
+          zIndex: 1000,
+          boxSizing: 'border-box'
+        }
+
+        showInput.value = true
+
+        nextTick(() => {
+          const input = document.querySelector('.floating-input')
+          if (input) {
+            input.focus()
+            input.select()
+          }
+        })
+      }
     }
   })
 
-  canvas.on('mouse:dblclick', (opt) => {
-    const target = opt.target
-    if (target && target.type === 'textbox') {
-      const r = Math.floor(target.top / props.cellHeight)
-      const c = Math.floor(target.left / props.cellWidth)
-      selectedRowIndex.value = r
-      selectedColIndex.value = c
-      highlightRowCol()
-
-      editingText = textRefs.value[r][c] // 使用已缓存的 TextBox 引用
-      inputValue.value = editingText.text
-
-      inputStyle.value = {
-        position: 'absolute',
-        left: `${tableLeft + editingText.left}px`,
-        top: `${tableTop + editingText.top}px`,
-        width: `${editingText.width}px`,
-        height: `${props.cellHeight - 10}px`,
-        fontSize: '16px',
-        padding: '2px 4px',
-        border: '1px solid #888',
+  // 添加键盘事件监听
+  document.addEventListener('keydown', (e) => {
+    if (showInput.value) {
+      if (e.key === 'Escape') {
+        cancelEdit()
       }
-
-      showInput.value = true
-      nextTick(() => {
-        document.querySelector('.floating-input')?.focus()
-      })
     }
   })
 })
